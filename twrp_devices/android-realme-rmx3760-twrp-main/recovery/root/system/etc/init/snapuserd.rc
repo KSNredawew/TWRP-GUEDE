@@ -1,0 +1,7 @@
+service snapuserd /system/bin/snapuserd
+    socket snapuserd stream 0660 root root
+    oneshot
+    disabled
+    user root
+    group root
+    seclabel u:r:recovery:s0

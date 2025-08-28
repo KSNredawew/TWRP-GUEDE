@@ -1,0 +1,69 @@
+#add for board init.rc for recovery mode
+import /init.recovery.common.rc
+
+on fs
+    start load_modules
+    start prepdecrypt 
+
+service load_modules /system/bin/load_modules.sh
+    oneshot
+    disabled
+    user root
+    group root
+    seclabel u:r:recovery:s0
+
+ service prepdecrypt /system/bin/prepdecrypt.sh
+    oneshot
+    disabled
+    user root
+    group root
+    seclabel u:r:recovery:s0
+
+
+service mtk.plpath.utils.link /system/bin/mtk_plpath_utils
+    class main
+    user root
+    group root system
+    disabled
+    oneshot
+    seclabel u:r:recovery:s0
+service keystore2 /system/bin/keystore2 /data/misc/keystore
+    user root
+    group root
+    disabled
+    seclabel u:r:recovery:s0
+
+service keymint-2-0 /system/bin/android.hardware.security.keymint@2.0-unisoc.service.trusty
+    user root
+    group root drmrpc
+    disabled
+seclabel u:r:recovery:s0
+
+service gatekeeper-1-0 /system/bin/android.hardware.gatekeeper@1.0-service.trusty
+    user root
+    group root
+    disabled
+    seclabel u:r:recovery:s0
+    
+on property:vendor.sys.listener.registered=true
+    start keymint-2-0
+    start gatekeeper-1-0
+
+on property:crypto.ready=1 && property:ro.crypto.state=encrypted
+    start keymint-2-0
+    start gatekeeper-1-0
+
+on property:crypto.ready=1 && property:hwservicemanager.ready=true
+    start keymint-2-0
+    start gatekeeper-1-0
+
+on property:ro.crypto.state=unsupported || property:ro.crypto.state=unencrypted || property:twrp.decrypt.done=true
+    stop keymint-2-0
+    stop gatekeeper-1-0
+
+on boot
+install_keyring
+ start keymint-2-0
+ start gatekeeper-1-0
+    start boot-hal-1-0
+    start health-hal-2-1

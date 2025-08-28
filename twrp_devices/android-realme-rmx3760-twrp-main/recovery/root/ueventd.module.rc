@@ -1,0 +1,3 @@
+/dev/block/by-name/miscdata       0660     system      system
+/dev/block/by-name/persist       0660     system      system
+/dev/block/by-name/sysdumpdb        0660     system     system

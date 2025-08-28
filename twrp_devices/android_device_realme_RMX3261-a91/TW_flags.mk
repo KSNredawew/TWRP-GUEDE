@@ -1,0 +1,47 @@
+#build hacks
+ALLOW_MISSING_DEPENDENCIES := true
+BUILD_BROKEN_DUP_RULES := true
+BUILD_BROKEN_USES_BUILD_COPY_HEADERS := true
+BUILD_BROKEN_PREBUILT_ELF_FILES := true
+BUILD_BROKEN_ELF_PREBUILT_PRODUCT_COPY_FILES := true
+BUILD_BROKEN_MISSING_REQUIRED_MODULES := true
+RELAX_USES_LIBRARY_CHECK=true
+
+# TWRP Configuration
+TW_THEME := portrait_hdpi
+TW_EXTRA_LANGUAGES := true
+TW_INPUT_BLACKLIST := "hbtp_vm"
+TW_BRIGHTNESS_PATH := "/sys/devices/platform/soc/soc:ap-ahb/20400000.dsi/20400000.dsi.0/display/panel0/sprd_backlight/brightness"
+TW_INCLUDE_FASTBOOTD := true
+TW_INCLUDE_NTFS_3G := true
+TW_USE_TOOLBOX := true
+RECOVERY_SDCARD_ON_DATA := true
+TW_USE_EXTERNAL_STORAGE := true
+TW_EXCLUDE_DEFAULT_USB_INIT := true
+TW_EXCLUDE_TWRPAPP := true
+TW_NO_BIND_SYSTEM := true
+TW_NO_SCREEN_BLANK := true
+TW_NO_LEGACY_PROPS := true
+TW_OVERRIDE_SYSTEM_PROPS := "ro.build.version.sdk"
+BOARD_BUILD_SYSTEM_ROOT_IMAGE := false
+TW_DEFAULT_BRIGHTNESS := 500
+TW_MAX_BRIGHTNESS := 4000
+
+#maintainer
+BOARD_MAINTAINER_NAME := KSN
+TW_DEVICE_VERSION := $(BOARD_MAINTAINER_NAME)
+OF_MAINTAINER := $(BOARD_MAINTAINER_NAME)
+PB_MAIN_VERSION := $(BOARD_MAINTAINER_NAME)
+
+# resetprop & repacktools
+TW_INCLUDE_RESETPROP := true
+TW_INCLUDE_REPACKTOOLS := true
+TW_INCLUDE_LIBRESETPROP := true
+
+# Debugging
+TWRP_EVENT_LOGGING := true
+TWRP_INCLUDE_LOGCAT := true
+TARGET_USES_LOGD := true
+
+# Kernel module
+TW_LOAD_VENDOR_MODULES := "incrementalfs.ko kheaders.ko trace_irqsoff_bytedancy.ko trace_noschedule_bytedancy.ko trace_runqlat_bytedancy.ko"
