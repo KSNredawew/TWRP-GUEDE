@@ -1,227 +1,310 @@
-# Полное руководство по созданию дерева устройств TWRP для Android-устройств
+# 📘 Полное руководство по созданию TWRP для Unisoc устройств
+🔍 Введение в TWRP и основные понятия
+TWRP (Team Win Recovery Project) — это кастомное рекавери для Android-устройств, которое заменяет стандартное рекавери с ограниченными функциями. TWRP предоставляет полнофункциональный сенсорный интерфейс и расширенные возможности для управления устройством7.
 
-Это руководство представляет собой исчерпывающий ресурс для разработчиков и энтузиастов, стремящихся создать или портировать кастомное рекавери Team Win Recovery Project (TWRP) для Android-устройств. Оно охватывает весь цикл разработки: от теоретической подготовки и сбора данных до компиляции образа и устранения ошибок. Особое внимание уделено специфике работы с современными версиями Android, включая TWRP на базе Android 12.1 и экспериментальную ветку для Android 14. Руководство структурировано для удобства: может использоваться как пошаговая инструкция или справочник по отдельным этапам.
+- Boot Control HAL — это критически важный компонент Android, который управляет механизмом A/B (Seamless) обновлений. Для устройств на разных чипсетах (Unisoc, MediaTek, Qualcomm) этот компонент имеет свои специфические реализации.
 
-Так можно взять с донора с таким же процесором главное не менять # Partitions # AVB # Kernel # Bootloader
+- Device Tree (DT) в разработке Android — это структура данных, описывающая аппаратные компоненты (SoC, память, периферия).
+- "Дерево устройств TWRP" — это репозиторий с конфигурационными файлами для сборочной системы TWRP6.
 
-TWRP — это открытое программное обеспечение, заменяющее стандартное рекавери Android с ограниченными функциями (сброс настроек, OTA-обновления) на полнофункциональный сенсорный интерфейс. TWRP позволяет устанавливать кастомные прошивки, модификации, создавать полные резервные копии (nandroid backups) и управлять файлами на всех разделах, что делает его незаменимым инструментом для кастомизации и восстановления Android-устройств.
+# 🏗️ Архитектура Unisoc устройств
+🔧 Особенности Unisoc процессоров
+- Unisoc (ранее Spreadtrum) процессоры имеют свою специфику, которую необходимо учитывать при создании TWRP. Основные отличия от MediaTek:
+- Архитектура процессора: Unisoc использует комбинацию Cortex-A75 и Cortex-A55
+- Параметры ядра: Различные параметры командной строки и размер страницы (обычно 2048 вместо 4096)
+- Boot Control HAL: Специфичная реализация для Unisoc платформ
+- Пути к оборудованию: Различные sysfs пути для управления дисплеем и другим оборудованием
 
-mtk_plpath_utils — это специальная утилита, разработанная для устройств на базе чипсетов MediaTek (MTK), которая играет критически важную роль в управлении разделами preloader и обеспечении корректной работы механизма A/B-обновлений (Seamless Updates) в среде Recovery, особенно в TWRP
-
-Boot Control HAL — это критически важный компонент Android, который управляет механизмом A/B (Seamless) обновлений. Для устройств на чипсетах MediaTek (MTK) этот компонент имеет свою специфику, что отражено в предоставленных вами файлах.
-
-Термин "Device Tree" (DT) в разработке Android может вводить в заблуждение. На базовом уровне DT — это структура данных, описывающая аппаратные компоненты (SoC, память, периферия), которые ядро Linux не может обнаружить автоматически. Производители создают файлы Device Tree Source (.dts), компилируемые в Device Tree Blob (.dtb) для передачи информации ядру через загрузчик. Однако "дерево устройств TWRP" — это репозиторий с конфигурационными файлами для сборочной системы TWRP, основанной на AOSP. Эти файлы (BoardConfig.mk, recovery.fstab, twrp_*.mk и др.) определяют, как скомпилировать recovery.img для конкретного устройства, используя DTB и проприетарные файлы. Создание дерева — это написание правил для сборки кастомного рекавери.
-
-Для компиляции TWRP требуется 64-битная Linux-система (например, Ubuntu) с минимум 128 ГБ свободного места на диске и 8 ГБ RAM. Необходимые инструменты: adb и fastboot для взаимодействия с устройством; repo для синхронизации кода из Git-репозиториев (выполняет git clone/rebase); git для управления версиями; Python 3.8+ и cpio для скриптов, таких как twrpdtgen. TWRP использует стандартную систему сборки AOSP, поэтому знание repo, lunch и mka обязательно.
-
-Соберите ключевые файлы с устройства для основы конфигурации. Извлеките recovery.img (или boot.img для A/B-устройств): `adb shell su -c "dd if=/dev/block/by-name/recovery of=/sdcard/recovery.img" && adb pull /sdcard/recovery.img`. Файл /system/build.prop (или /product/build.prop) содержит переменные: ro.product.device (кодовое имя), ro.product.board (платформа чипсета), ro.product.brand и ro.product.manufacturer. Неполные данные приведут к ошибкам компиляции или неработоспособному образу.
-
-twrpdtgen — Python-скрипт для генерации базовой структуры дерева, идеальный для новичков. Установите: `pip3 install twrpdtgen`, затем cpio: `sudo apt install cpio`, и запустите: `python3 -m twrpdtgen <path/to/recovery.img>`. Результат: дерево в `output/manufacturer/codename`. Ограничения: поддержка до Android 12; для 12.1+ нужна ручная доработка. Это "черновик", а не финальная версия.
-
-Дерево в `device/<brand>/<codename>` содержит: Android.mk (определяет модули для сборки); AndroidProducts.mk (связывает продукты с twrp_*.mk); BoardConfig.mk (центральный конфиг); recovery.fstab (таблица монтирования разделов); vendorsetup.sh (добавляет продукт в AOSP, например, `add_lunch_combo twrp_<codename>-eng`); twrp_*.mk (основной файл продукта, наследует настройки TWRP).
-
-Ramdisk — виртуальный диск в RAM с файлами для запуска. recovery.img содержит ядро и ramdisk рекавери (init.rc, recovery.fstab); boot.img — ядро и ramdisk ОС; vendor_boot.img (для A/B-устройств) содержит vendor-код. Извлеките файлы из стокового образа: prebuilt для ядра, recovery/root для ramdisk.
-
-BoardConfig.mk — "сердце" дерева. Пример для устройства Tecno LH7n (на базе MT6789):
-
+📊 Ключевые характеристики Unisoc Tiger T610 (ums512) (realme c21y)
 ```makefile
-# Copyright (C) 2022 The LineageOS Project
-# SPDX-License-Identifier: Apache-2.0
-
-DEVICE_PATH := device/tecno/LH7n
-
-# Architecture
+# Архитектура Unisoc Tiger T610
 TARGET_ARCH := arm64
 TARGET_ARCH_VARIANT := armv8-a
 TARGET_CPU_ABI := arm64-v8a
 TARGET_CPU_VARIANT := generic
-TARGET_CPU_VARIANT_RUNTIME := cortex-a55
+TARGET_CPU_VARIANT_RUNTIME := cortex-a75
 
 TARGET_2ND_ARCH := arm
-TARGET_2ND_ARCH_VARIANT := armv8-2a
+TARGET_2ND_ARCH_VARIANT := armv7-a-neon
 TARGET_2ND_CPU_ABI := armeabi-v7a
 TARGET_2ND_CPU_ABI2 := armeabi
 TARGET_2ND_CPU_VARIANT := generic
 TARGET_2ND_CPU_VARIANT_RUNTIME := cortex-a55
 
+# Платформа и загрузчик
+TARGET_BOARD_PLATFORM := ums512
+TARGET_BOOTLOADER_BOARD_NAME := ums512_1h10
+TARGET_NO_BOOTLOADER := false
+```
+# 🛠️ Создание Device Tree для Unisoc
+📋 Структура дерева устройств
+Дерево устройств TWRP для Unisoc располагается в device/<brand>/<codename> и содержит:
+
+- Android.mk: Определяет модули для сборки
+- AndroidProducts.mk: Связывает продукты с twrp_*.mk
+- BoardConfig.mk: Центральный конфигурационный файл
+- recovery.fstab: Таблица монтирования разделов
+- vendorsetup.sh: Добавляет продукт в AOSP
+- twrp_*.mk: Основной файл продукта
+
+⚙️ BoardConfig.mk для realme c21y
+```makefile
+#
+# Copyright (C) 2024 The TWRP Open Source Project
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+DEVICE_PATH := device/realme/RMX3261
+
+# Architecture
+TARGET_ARCH := arm64
+TARGET_ARCH_VARIANT := armv8-a
+TARGET_CPU_ABI := arm64-v8a
+TARGET_CPU_ABI2 := 
+TARGET_CPU_VARIANT := generic
+TARGET_CPU_VARIANT_RUNTIME := cortex-a75
+
+TARGET_2ND_ARCH := arm
+TARGET_2ND_ARCH_VARIANT := armv7-a-neon
+TARGET_2ND_CPU_ABI := armeabi-v7a
+TARGET_2ND_CPU_ABI2 := armeabi
+TARGET_2ND_CPU_VARIANT := generic
+TARGET_2ND_CPU_VARIANT_RUNTIME := cortex-a55
+
+# 64-bit поддержка
+TARGET_SUPPORTS_64_BIT_APPS := true
+TARGET_IS_64_BIT := true
 TARGET_USES_64_BIT_BINDER := true
-ENABLE_CPUSETS := true
-ENABLE_SCHEDBOOST := true
 
 # Bootloader
-TARGET_BOOTLOADER_BOARD_NAME := mt6789
-TARGET_NO_BOOTLOADER := true
+TARGET_BOOTLOADER_BOARD_NAME := ums512_1h10
+TARGET_NO_BOOTLOADER := false
 
-# Build hacks
-BUILD_BROKEN_DUP_RULES := true
-BUILD_BROKEN_ELF_PREBUILT_PRODUCT_COPY_FILES := true
+# Display
+TARGET_SCREEN_DENSITY := 320
 
-# DTBO
-BOARD_KERNEL_SEPARATED_DTBO := true
-
-# Kernel
-TARGET_NO_KERNEL := true
-BOARD_RAMDISK_USE_LZ4 := true
-TARGET_PREBUILT_DTB := $(DEVICE_PATH)/prebuilt/dtb.img
-
-BOARD_BOOT_HEADER_VERSION := 4
-BOARD_KERNEL_BASE := 0x3fff8000
-BOARD_KERNEL_OFFSET := 0x00008000
-BOARD_KERNEL_TAGS_OFFSET := 0x07c88000
-BOARD_PAGE_SIZE := 4096
-BOARD_TAGS_OFFSET := 0x07c88000
-BOARD_RAMDISK_OFFSET := 0x26f08000
-BOARD_DTB_SIZE := 209018
-BOARD_DTB_OFFSET := 0x07c88000
-BOARD_VENDOR_BASE := 0x3fff8000
-BOARD_VENDOR_CMDLINE := bootopt=64S3,32N2,64N2
-
-BOARD_MKBOOTIMG_ARGS += --dtb $(TARGET_PREBUILT_DTB)
-BOARD_MKBOOTIMG_ARGS += --vendor_cmdline $(BOARD_VENDOR_CMDLINE)
-BOARD_MKBOOTIMG_ARGS += --pagesize $(BOARD_PAGE_SIZE) --board ""
-BOARD_MKBOOTIMG_ARGS += --kernel_offset $(BOARD_KERNEL_OFFSET)
+# Kernel (Unisoc специфика)
+BOARD_BOOTIMG_HEADER_VERSION := 2
+BOARD_KERNEL_BASE := 0x00000000
+BOARD_KERNEL_CMDLINE := console=ttyS1,115200n8 video=HDMI-A-1:1280x800@60 buildvariant=user
+BOARD_KERNEL_CMDLINE += androidboot.init_fatal_reboot_target=recovery
+BOARD_KERNEL_PAGESIZE := 2048  # Unisoc обычно использует 2048 вместо 4096
+BOARD_RAMDISK_OFFSET := 0x05400000
+BOARD_KERNEL_TAGS_OFFSET := 0x00000100
+BOARD_MKBOOTIMG_ARGS += --header_version $(BOARD_BOOTIMG_HEADER_VERSION)
 BOARD_MKBOOTIMG_ARGS += --ramdisk_offset $(BOARD_RAMDISK_OFFSET)
-BOARD_MKBOOTIMG_ARGS += --tags_offset $(BOARD_TAGS_OFFSET)
-BOARD_MKBOOTIMG_ARGS += --header_version $(BOARD_BOOT_HEADER_VERSION)
-BOARD_MKBOOTIMG_ARGS += --dtb_offset $(BOARD_DTB_OFFSET)
+BOARD_MKBOOTIMG_ARGS += --tags_offset $(BOARD_KERNEL_TAGS_OFFSET)
+BOARD_KERNEL_IMAGE_NAME := Image
+BOARD_INCLUDE_DTB_IN_BOOTIMG := true
+TARGET_KERNEL_CONFIG := RMX3261_defconfig
+TARGET_KERNEL_SOURCE := kernel/realme/RMX3261
 
-# Assert
-TARGET_OTA_ASSERT_DEVICE := Tecno-LH7n
+# Kernel - prebuilt
+TARGET_FORCE_PREBUILT_KERNEL := true
+ifeq ($(TARGET_FORCE_PREBUILT_KERNEL),true)
+TARGET_PREBUILT_KERNEL := $(DEVICE_PATH)/prebuilt/kernel
+TARGET_PREBUILT_DTB := $(DEVICE_PATH)/prebuilt/dtb.img
+BOARD_MKBOOTIMG_ARGS += --dtb $(TARGET_PREBUILT_DTB)
+BOARD_INCLUDE_DTB_IN_BOOTIMG := 
+endif
 
 # AVB
 BOARD_AVB_ENABLE := true
+BOARD_AVB_MAKE_VBMETA_IMAGE_ARGS += --flags 3
+BOARD_AVB_VBMETA_SYSTEM := system
+BOARD_AVB_BOOT_KEY_PATH := external/avb/test/data/testkey_rsa4096.pem
+BOARD_AVB_BOOT_ALGORITHM := SHA256_RSA4096
+BOARD_AVB_BOOT_ROLLBACK_INDEX := $(PLATFORM_SECURITY_PATCH_TIMESTAMP)
+BOARD_AVB_BOOT_ROLLBACK_INDEX_LOCATION := 2
 
-# Partitions configs
-BOARD_FLASH_BLOCK_SIZE := 262144 # (BOARD_KERNEL_PAGESIZE * 64)
-BOARD_MAIN_SIZE := 12670140416
-BOARD_SUPER_PARTITION_SIZE := 9126805504
-BOARD_VENDOR_BOOTIMAGE_PARTITION_SIZE := 67108864
-BOARD_USES_METADATA_PARTITION := true
-BOARD_SUPER_PARTITION_GROUPS := main
-BOARD_MAIN_PARTITION_LIST += \
-    odm_dlkm \
-    product \
+# Platform
+TARGET_BOARD_PLATFORM := ums512
+
+# Security patch обход
+PLATFORM_SECURITY_PATCH := 2022-07-05
+PLATFORM_VERSION := 11.0.0
+VENDOR_SECURITY_PATCH := 2022-07-05
+
+# Recovery
+TARGET_RECOVERY_FSTAB := $(DEVICE_PATH)/recovery/root/system/etc/recovery.fstab
+TARGET_RECOVERY_PIXEL_FORMAT := RGBX_8888
+BOARD_USES_RECOVERY_AS_BOOT := true
+TARGET_NO_RECOVERY := true
+TARGET_USES_MKE2FS := true
+
+# System properties
+TARGET_SYSTEM_PROP += $(DEVICE_PATH)/system.prop
+
+# Unisoc specific modules
+TARGET_RECOVERY_DEVICE_MODULES += \
+    libcap \
+    libion \
+    libxml2 \
+    libandroidicu
+
+TW_RECOVERY_ADDITIONAL_RELINK_LIBRARY_FILES += \
+    $(TARGET_OUT_SHARED_LIBRARIES)/libcap.so \
+    $(TARGET_OUT_SHARED_LIBRARIES)/libion.so \
+    $(TARGET_OUT_SHARED_LIBRARIES)/libxml2.so
+
+## Inherit partitions flags
+include device/realme/RMX3261/partitions.mk
+
+## Inherit TWRP flags
+include device/realme/RMX3261/TW_flags.mk
+```
+🔧 TW_flags.mk для realme c21y
+```makefile
+# Build hacks
+ALLOW_MISSING_DEPENDENCIES := true
+BUILD_BROKEN_DUP_RULES := true
+BUILD_BROKEN_USES_BUILD_COPY_HEADERS := true
+BUILD_BROKEN_PREBUILT_ELF_FILES := true
+BUILD_BROKEN_ELF_PREBUILT_PRODUCT_COPY_FILES := true
+BUILD_BROKEN_MISSING_REQUIRED_MODULES := true
+RELAX_USES_LIBRARY_CHECK := true
+
+# TWRP Configuration
+TW_THEME := portrait_hdpi
+TW_EXTRA_LANGUAGES := true
+TW_INPUT_BLACKLIST := "hbtp_vm"
+TW_BRIGHTNESS_PATH := "/sys/devices/platform/soc/soc:ap-ahb/20400000.dsi/20400000.dsi.0/display/panel0/sprd_backlight/brightness"
+TW_INCLUDE_FASTBOOTD := true
+TW_INCLUDE_NTFS_3G := true
+TW_USE_TOOLBOX := true
+RECOVERY_SDCARD_ON_DATA := true
+TW_USE_EXTERNAL_STORAGE := true
+TW_EXCLUDE_DEFAULT_USB_INIT := true
+TW_EXCLUDE_TWRPAPP := true
+TW_NO_BIND_SYSTEM := true
+TW_NO_SCREEN_BLANK := true
+TW_NO_LEGACY_PROPS := true
+TW_OVERRIDE_SYSTEM_PROPS := "ro.build.version.sdk"
+BOARD_BUILD_SYSTEM_ROOT_IMAGE := false
+TW_DEFAULT_BRIGHTNESS := 500
+TW_MAX_BRIGHTNESS := 4000
+
+# Maintainer info
+BOARD_MAINTAINER_NAME := KSN
+TW_DEVICE_VERSION := $(BOARD_MAINTAINER_NAME)
+OF_MAINTAINER := $(BOARD_MAINTAINER_NAME)
+PB_MAIN_VERSION := $(BOARD_MAINTAINER_NAME)
+
+# Resetprop & repacktools
+TW_INCLUDE_RESETPROP := true
+TW_INCLUDE_REPACKTOOLS := true
+TW_INCLUDE_LIBRESETPROP := true
+
+# Debugging
+TWRP_EVENT_LOGGING := true
+TWRP_INCLUDE_LOGCAT := true
+TARGET_USES_LOGD := true
+
+# Kernel modules
+TW_LOAD_VENDOR_MODULES := "incrementalfs.ko kheaders.ko trace_irqsoff_bytedancy.ko trace_noschedule_bytedancy.ko trace_runqlat_bytedancy.ko"
+```
+📊 Partitions.mk для realme c21y
+```makefile
+# A/B
+AB_OTA_UPDATER := true
+AB_OTA_PARTITIONS += \
+    vbmeta \
+    vbmeta_system \
+    vbmeta_vendor \
+    vbmeta_product \
+    vbmeta_system_ext \
+    dtbo \
+    boot \
     system \
     system_ext \
     vendor \
-    vendor_dlkm
+    product
 
-BOARD_ODM_DLKMIMAGE_FILE_SYSTEM_TYPE := ext4
-BOARD_PRODUCTIMAGE_FILE_SYSTEM_TYPE := ext4
-BOARD_SYSTEMIMAGE_FILE_SYSTEM_TYPE := ext4
-BOARD_SYSTEM_EXTIMAGE_FILE_SYSTEM_TYPE := ext4
-BOARD_USERDATAIMAGE_FILE_SYSTEM_TYPE := f2fs
-BOARD_VENDORIMAGE_FILE_SYSTEM_TYPE := ext4
-BOARD_VENDOR_DLKMIMAGE_FILE_SYSTEM_TYPE := ext4
-
-TARGET_COPY_OUT_ODM_DLKM := odm_dlkm
-TARGET_COPY_OUT_PRODUCT := product
-TARGET_COPY_OUT_SYSTEM := system
-TARGET_COPY_OUT_SYSTEM_EXT := system_ext
-TARGET_COPY_OUT_VENDOR := vendor
-TARGET_COPY_OUT_VENDOR_DLKM := vendor_dlkm
-
-# Platform
-TARGET_BOARD_PLATFORM := mt6789
-
-# VNDK
-BOARD_VNDK_VERSION := current
-
-# Properties
-TARGET_SYSTEM_PROP += $(DEVICE_PATH)/system.prop
-
-# Recovery
+# Partitions
+BOARD_FLASH_BLOCK_SIZE := 131072 
+BOARD_BOOTIMAGE_PARTITION_SIZE := 67108864
 BOARD_HAS_LARGE_FILESYSTEM := true
-BOARD_USES_GENERIC_KERNEL_IMAGE := true
-BOARD_HAS_NO_SELECT_BUTTON := true
 BOARD_SUPPRESS_SECURE_ERASE := true
-BOARD_INCLUDE_RECOVERY_RAMDISK_IN_VENDOR_BOOT := true
-BOARD_MOVE_RECOVERY_RESOURCES_TO_VENDOR_BOOT := true
-TARGET_NO_RECOVERY := true
-TARGET_RECOVERY_FSTAB := $(DEVICE_PATH)/recovery/root/system/etc/recovery.fstab
-TARGET_RECOVERY_PIXEL_FORMAT := "RGBX_8888"
 TARGET_USERIMAGES_USE_EXT4 := true
 TARGET_USERIMAGES_USE_F2FS := true
 
-# Crypto
-TW_INCLUDE_CRYPTO := true
-TW_INCLUDE_CRYPTO_FBE := true
-TW_USE_FSCRYPT_POLICY := 2
-TW_FORCE_KEYMASTER_VER := true
-OF_DEFAULT_KEYMASTER_VERSION := 4.1
+# Filesystem types
+BOARD_SYSTEMIMAGE_PARTITION_TYPE := ext4
+BOARD_VENDORIMAGE_FILE_SYSTEM_TYPE := ext4
+BOARD_PRODUCTIMAGE_FILE_SYSTEM_TYPE := ext4
+BOARD_SYSTEM_EXTIMAGE_FILE_SYSTEM_TYPE := ext4
+BOARD_USERDATAIMAGE_FILE_SYSTEM_TYPE := f2fs
 
-# Hack
-PLATFORM_SECURITY_PATCH := 2099-12-31
-PLATFORM_VERSION := 99.87.36
-PLATFORM_VERSION_LAST_STABLE := $(PLATFORM_VERSION)
-VENDOR_SECURITY_PATCH := $(PLATFORM_SECURITY_PATCH)
-BOOT_SECURITY_PATCH := $(PLATFORM_SECURITY_PATCH)
+# Copy out directories
+TARGET_COPY_OUT_VENDOR := vendor
+TARGET_COPY_OUT_PRODUCT := product
+TARGET_COPY_OUT_SYSTEM_EXT := system_ext
 
-# Tools
-TW_INCLUDE_FB2PNG := true
-TW_INCLUDE_NTFS_3G := true
-TW_INCLUDE_REPACKTOOLS := true
-TW_INCLUDE_RESETPROP := true
-TW_INCLUDE_LPTOOLS := true
+# Dynamic partitions
+BOARD_SUPER_PARTITION_SIZE := 9126805504 
+BOARD_SUPER_PARTITION_GROUPS := realme_dynamic_partitions
+BOARD_REALME_DYNAMIC_PARTITIONS_PARTITION_LIST := system system_ext vendor product
+BOARD_REALME_DYNAMIC_PARTITIONS_SIZE := 9122611200 
 
-# TWRP Configs
-TW_DEFAULT_BRIGHTNESS := 80
-TW_EXCLUDE_APEX := true
-TW_EXCLUDE_LPDUMP := true
-TW_EXTRA_LANGUAGES := true
-TW_FRAMERATE := 60
-TW_THEME := portrait_hdpi
-TWRP_INCLUDE_LOGCAT := true
-TARGET_USES_LOGD := true
-TARGET_USES_MKE2FS := true
-TW_MAX_BRIGHTNESS := 255
-TW_LOAD_VENDOR_BOOT_MODULES := true
-
-# StatusBar
-TW_STATUS_ICONS_ALIGN := center
-TW_CUSTOM_CPU_POS := "300"
-TW_CUSTOM_CLOCK_POS := "70"
-TW_CUSTOM_BATTERY_POS := "790"
-
-# Hack depends
-ALLOW_MISSING_DEPENDENCIES := true
-
-# Maintainer
-TW_DEVICE_VERSION := LH7n-Andreyka445-KSN
+# Symbolic links
+BOARD_ROOT_EXTRA_SYMLINKS := \
+    /vendor/bt_firmware:/bt_firmware \
+    /mnt/vendor/socko:/socko \
+    /mnt/sdcard/:sdcrad \
+    /system/product/:product \
+    /system/system_ext/:system_ext
 ```
-Проверьте TW_BRIGHTNESS_PATH в sysfs устройства, так как он часто вызывает проблемы с дисплеем (например, черный экран).
-TWRP требует проприетарные файлы (vendor blobs) из /vendor для драйверов и расшифровки. Пример device.mk для Tecno LH7n:
+📦 Device.mk для realme c21y
 ```makefile
-# Copyright (C) 2022 The LineageOS Project
-# SPDX-License-Identifier: Apache-2.0
+#
+# Copyright (C) 2024 The TWRP Open Source Project
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
-# Enable Virtual A/B OTA
-$(call inherit-product, $(SRC_TARGET_DIR)/product/virtual_ab_ota/launch_with_vendor_ramdisk.mk)
-$(call inherit-product, $(SRC_TARGET_DIR)/product/virtual_ab_ota/compression.mk)
+LOCAL_PATH := device/realme/RMX3261
 
+# Dynamic partitions support
+PRODUCT_USE_DYNAMIC_PARTITIONS := true
+
+# A/B configuration
+TARGET_IS_VAB := true
 ENABLE_VIRTUAL_AB := true
-AB_OTA_UPDATER := true
-
-AB_OTA_PARTITIONS += \
-    boot \
-    dtbo \
-    lk \
-    odm \
-    odm_dlkm \
-    product \
-    system \
-    system_ext \
-    vbmeta_system \
-    vbmeta_vendor \
-    vendor \
-    vendor_boot \
-    vendor_dlkm
 
 AB_OTA_POSTINSTALL_CONFIG += \
     RUN_POSTINSTALL_system=true \
-    POSTINSTALL_PATH_system=system/bin/mtk_plpath_utils \
+    POSTINSTALL_PATH_system=system/bin/otapreopt_script \
     FILESYSTEM_TYPE_system=ext4 \
     POSTINSTALL_OPTIONAL_system=true
+
+# F2FS utilities
+PRODUCT_PACKAGES += \
+    sg_write_buffer \
+    f2fs_io \
+    check_f2fs
+
+# Userdata checkpoint
+PRODUCT_PACKAGES += \
+    checkpoint_gc
 
 AB_OTA_POSTINSTALL_CONFIG += \
     RUN_POSTINSTALL_vendor=true \
@@ -229,89 +312,37 @@ AB_OTA_POSTINSTALL_CONFIG += \
     FILESYSTEM_TYPE_vendor=ext4 \
     POSTINSTALL_OPTIONAL_vendor=true
 
+# Health HAL
+PRODUCT_PACKAGES += \
+    android.hardware.health@2.1-impl \
+    android.hardware.health@2.1-service
+
+# Unisoc specific bootctrl HAL
+PRODUCT_PACKAGES += \
+    bootctrl.default \
+    bootctrl.unisoc \
+    bootctrl.ums512.recovery
+
+# OTA packages
 PRODUCT_PACKAGES += \
     otapreopt_script \
-    cppreopts.sh
-
-PRODUCT_PROPERTY_OVERRIDES += ro.twrp.vendor_boot=true
-
-# Dynamic Partitions
-PRODUCT_USE_DYNAMIC_PARTITIONS := true
-
-# API
-PRODUCT_SHIPPING_API_LEVEL := 31
-PRODUCT_TARGET_VNDK_VERSION := 31
-
-# Boot control HAL
-PRODUCT_PACKAGES += \
-    android.hardware.boot@1.2-mtkimpl \
-    android.hardware.boot@1.2-mtkimpl.recovery
+    cppreopts.sh \
+    update_engine \
+    update_verifier \
+    update_engine_sideload \
+    checkpoint_gc
 
 PRODUCT_PACKAGES_DEBUG += \
     bootctl
 
 # Fastbootd
 PRODUCT_PACKAGES += \
+    fastbootd \
     android.hardware.fastboot@1.0-impl-mock \
-    fastbootd
+    android.hardware.fastboot@1.0-impl-mock.recovery
 
-# Health Hal
-PRODUCT_PACKAGES += \
-    android.hardware.health@2.1-impl \
-    android.hardware.health@2.1-service
-
-# Keymaster
-PRODUCT_PACKAGES += \
-    android.hardware.keymaster@4.1
-
-# Keystore Hal
-PRODUCT_PACKAGES += \
-    android.system.keystore2
-
-# MTK plpath utils
-PRODUCT_PACKAGES += \
-    mtk_plpath_utils \
-    mtk_plpath_utils.recovery
-
-# Security
-PRODUCT_PACKAGES += \
-    android.hardware.security.keymint \
-    android.hardware.security.secureclock \
-    android.hardware.security.sharedsecret
-
-# Update engine
-PRODUCT_PACKAGES += \
-    update_engine \
-    update_engine_sideload \
-    update_verifier
-
-PRODUCT_PACKAGES_DEBUG += \
-    update_engine_client
-
-# Additional configs
-TW_RECOVERY_ADDITIONAL_RELINK_LIBRARY_FILES += \
-    $(TARGET_OUT_SHARED_LIBRARIES)/android.hardware.keymaster@4.1
-
-TARGET_RECOVERY_DEVICE_MODULES += \
-    android.hardware.keymaster@4.1
+# HIDL
+PRODUCT_ENFORCE_VINTF_MANIFEST := true
 ```
-Эти пакеты обеспечивают доступ к зашифрованным данным (FBE) и поддержку A/B-архитектуры. Файл recovery/root/system/etc/twrp.flags настраивает поведение TWRP, например, для поддержки прошивки разделов и обхода проблем с GSI.
-Каждая версия Android меняет AOSP (init, sepolicy, безопасность). Дерево для Android 11 не подойдет для 12.1/14 без правок. TWRP 12.1 (на базе Android 12.1) — стабильная ветка, требующая TW_INCLUDE_CRYPTO_FBE, AB_OTA_UPDATER := true для A/B и поддержки vendor_boot. TWRP 14.1 (Android 14) экспериментальна, с проблемами: error 255 в бэкапах data, отсутствие вибрации, сложности с форматированием data (нужен fastboot). Могут требоваться файлы вроде task_profiles.json для logcat.
-Для сборки TWRP выполните:
-
-Синхронизация:
-```bash
-repo init --depth=1 -u https://github.com/minimal-manifest-twrp/platform_manifest_twrp_aosp.git -b twrp-12.1  # Для 12.1; для 14 используйте соответствующую ветку
-repo sync
-```
-Сборка:
-```bash
-source build/envsetup.sh
-lunch twrp_<codename>-eng
-# тут надо выбрать какой у вас раздел
-mka recoveryimage  
-mka bootimage      
-mka vendorbootimage 
-```
-
-Создание дерева TWRP — сложный процесс, требующий глубокого понимания Android. twrpdtgen — хорошая отправная точка, но необходима ручная доработка. TWRP 14.1 экспериментальна и содержит ошибки, поэтому новичкам рекомендуется начинать с TWRP 12.1. Примеры BoardConfig.mk и device.mk для Tecno LH7n иллюстрируют настройку для современных устройств с A/B-архитектурой.
+# 📚 Заключение
+Создание TWRP для устройств на Unisoc требует учета специфических особенностей этой платформы.
